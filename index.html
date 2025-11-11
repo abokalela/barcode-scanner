@@ -5,40 +5,92 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ماسح الباركود</title>
 <style>
-body{margin:0;padding:0;font-family:"Segoe UI",sans-serif;background:#000;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;overflow:hidden;}
-video{width:100%;height:auto;max-height:90vh;border-radius:12px;}
-button{margin-top:10px;padding:10px 20px;border:none;border-radius:8px;background:#0b6fb2;color:#fff;font-size:16px;font-weight:bold;}
+  body {
+    margin: 0;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+  }
+
+  #container {
+    position: relative;
+    width: 300px;
+    height: 300px;
+    overflow: hidden;
+    border: 3px solid #00ff55;
+    border-radius: 20px;
+  }
+
+  video {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 300px;
+    height: 300px;
+    object-fit: cover;
+    border-radius: 20px;
+  }
+
+  #laser {
+    position: absolute;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #00ff55, transparent);
+    animation: scan 2s linear infinite;
+  }
+
+  @keyframes scan {
+    0% { top: 0; }
+    50% { top: calc(100% - 2px); }
+    100% { top: 0; }
+  }
+
+  #output {
+    position: absolute;
+    bottom: -40px;
+    width: 100%;
+    color: #fff;
+    text-align: center;
+    font-size: 18px;
+    font-family: sans-serif;
+  }
 </style>
 </head>
 <body>
-<video id="preview" autoplay playsinline></video>
-<button id="closeBtn">إغلاق</button>
-<script src="https://unpkg.com/@zxing/library@latest"></script>
-<script>
-const codeReader = new ZXing.BrowserMultiFormatReader();
-const preview = document.getElementById('preview');
-const closeBtn = document.getElementById('closeBtn');
+  <div id="container">
+    <video id="video" autoplay></video>
+    <div id="laser"></div>
+    <div id="output"></div>
+  </div>
 
-const constraints = {
-  video: {
-    facingMode: { exact: "environment" },
-    width: { ideal: 1920 },
-    height: { ideal: 1080 }
-  }
-};
+  <script src="https://unpkg.com/@zxing/library@latest"></script>
+  <script>
+    const codeReader = new ZXing.BrowserMultiFormatReader();
+    const videoElement = document.getElementById('video');
+    const outputDiv = document.getElementById('output');
 
-codeReader.decodeFromVideoDevice(null, 'preview', (result, err) => {
-  if (result) {
-    window.opener.postMessage({ barcode: result.text }, '*');
-    window.close();
-  }
-});
+    async function startScanner() {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const camera = devices.find(d => d.kind === 'videoinput');
+        if (!camera) throw new Error('لا توجد كاميرا متاحة');
 
-navigator.mediaDevices.getUserMedia(constraints)
-  .then(stream => preview.srcObject = stream)
-  .catch(() => alert("تعذر الوصول للكاميرا. تأكد من السماح للتطبيق بالوصول."));
+        await codeReader.decodeFromVideoDevice(camera.deviceId, videoElement, (result, err) => {
+          if (result) {
+            outputDiv.textContent = result.text;
+            window.parent.postMessage(result.text, '*'); // إرسال الكود للتطبيق
+          }
+        });
+      } catch (error) {
+        console.log('تم تجاهل خطأ الكاميرا:', error);
+        // لا تعرض أي رسالة للمستخدم
+      }
+    }
 
-closeBtn.onclick = () => window.close();
-</script>
+    startScanner();
+  </script>
 </body>
 </html>
