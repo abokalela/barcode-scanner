@@ -3,192 +3,42 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>إضافة منتجات العروض</title>
+<title>ماسح الباركود</title>
 <style>
-body{font-family:"Segoe UI",Tahoma,Arial;direction:rtl;margin:0;padding:16px;background:#f0f7ff;}
-.container{max-width:520px;margin:0 auto;background:#fff;padding:14px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,0.06);}
-label{display:block;margin-top:10px;font-weight:600;}
-input[type=text], select{width:100%;padding:10px;border-radius:8px;border:1px solid #d0e6f2;background:#fbfeff;}
-button{padding:10px;border-radius:8px;border:none;background:#0b6fb2;color:#fff;font-weight:700;margin-top:10px;width:100%;cursor:pointer;}
-button:disabled{opacity:0.6;cursor:not-allowed;}
-button.ghost{background:transparent;color:#0b6fb2;border:1px solid #cde8fb;}
-img.preview{width:100%;max-width:260px;border-radius:8px;margin-top:8px;border:1px solid #e5f1f9;}
-.small{font-size:13px;color:#567;margin-top:6px;}
-.loader{border:3px solid #f3f3f3;border-top:3px solid #0b6fb2;border-radius:50%;width:24px;height:24px;animation:spin 1s linear infinite;display:inline-block;vertical-align:middle;margin-left:8px;}
-@keyframes spin{0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
+body{margin:0;padding:0;font-family:"Segoe UI",sans-serif;background:#000;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;overflow:hidden;}
+video{width:100%;height:auto;max-height:90vh;border-radius:12px;}
+button{margin-top:10px;padding:10px 20px;border:none;border-radius:8px;background:#0b6fb2;color:#fff;font-size:16px;font-weight:bold;}
 </style>
 </head>
 <body>
-<div class="container">
-<h2>إضافة منتجات - العروض</h2>
-<div id="loginCard">
-<label>اسم المستخدم</label>
-<select id="usernameSelect"></select>
-<label>كلمة المرور</label>
-<input id="password" type="password"/>
-<button onclick="doLogin()">دخول</button>
-<div id="loginMsg" class="small" style="color:#b21"></div>
-</div>
-
-<div id="mainCard" style="display:none;">
-<div class="small">مرحبًا <span id="welcomeName"></span> — <span id="welcomeSection"></span></div>
-<button class="ghost" onclick="logout()">تغيير مستخدم</button>
-
-<label>باركود الصنف</label>
-<div style="display:flex;gap:8px;">
-  <input id="barcodeInput" type="text" placeholder="ادخل أو امسح الباركود"/>
-  <button onclick="openBarcodeScanner()">مسح الكاميرا</button>
-</div>
-<div id="formMsg" class="small"></div>
-
-<label>صورة المنتج</label>
-<img id="sourceImage" class="preview" src="" alt="لا توجد صورة"/>
-<input id="uploadFile" type="file" accept="image/*" capture="environment" style="display:none;"/>
-
-<label>اسم الصنف</label><input id="productName" type="text"/>
-<label>مواصفات 1</label><input id="spec1" type="text"/>
-<label>مواصفات 2</label><input id="spec2" type="text"/>
-<label>اسم الشركة</label><input id="company" type="text"/>
-<label>السعر</label><input id="price" type="text"/>
-<label>عدد المخزون</label><input id="stock" type="text"/>
-
-<button onclick="saveProduct()">حفظ المنتج</button>
-</div>
-</div>
-
+<video id="preview" autoplay playsinline></video>
+<button id="closeBtn">إغلاق</button>
+<script src="https://unpkg.com/@zxing/library@latest"></script>
 <script>
-const SCANNER_PAGE = "https://abokalela.github.io/barcode-scanner/";
-let currentUser = null;
+const codeReader = new ZXing.BrowserMultiFormatReader();
+const preview = document.getElementById('preview');
+const closeBtn = document.getElementById('closeBtn');
 
-function reloadUsers(){
-  google.script.run.withSuccessHandler(users=>{
-    const sel=document.getElementById('usernameSelect');
-    sel.innerHTML='';
-    users.forEach(u=>{
-      const opt=document.createElement('option');
-      opt.value=u['اسم المستخدم'];
-      opt.textContent=(u['اسم المستخدم']||'')+(u['القسم']?' — '+u['القسم']:'');
-      sel.appendChild(opt);
-    });
-  }).getUsersList();
-}
-reloadUsers();
-
-function doLogin(){
-  const username=document.getElementById('usernameSelect').value;
-  const password=document.getElementById('password').value;
-  google.script.run.withSuccessHandler(res=>{
-    if(res.success){
-      currentUser=res;
-      document.getElementById('loginCard').style.display='none';
-      document.getElementById('mainCard').style.display='block';
-      document.getElementById('welcomeName').textContent=res.employeeName;
-      document.getElementById('welcomeSection').textContent=res.section;
-    } else document.getElementById('loginMsg').textContent=res.message;
-  }).validateLogin(username,password);
-}
-
-function logout(){
-  currentUser=null;
-  document.getElementById('loginCard').style.display='block';
-  document.getElementById('mainCard').style.display='none';
-}
-
-function openBarcodeScanner(){
-  const w=420,h=Math.min(screen.height-80,800);
-  const left=(screen.width-w)/2,top=(screen.height-h)/2;
-  const win=window.open(SCANNER_PAGE,'barcodeScanner',`width=${w},height=${h},left=${left},top=${top}`);
-  if(!win){alert("يرجى السماح بالنوافذ المنبثقة.");return;}
-  function receiveMessage(event){
-    const data=event.data;
-    if(data && data.barcode){
-      document.getElementById('barcodeInput').value=data.barcode;
-      checkBarcode();
-      try{win.close();}catch(e){}
-      window.removeEventListener('message',receiveMessage);
-    }
+const constraints = {
+  video: {
+    facingMode: { exact: "environment" },
+    width: { ideal: 1920 },
+    height: { ideal: 1080 }
   }
-  window.addEventListener('message',receiveMessage,false);
-}
+};
 
-function checkBarcode(){
-  const barcode=document.getElementById('barcodeInput').value.trim();
-  if(!barcode) return;
-  document.getElementById('formMsg').textContent="جاري البحث عن الصورة...";
-  google.script.run.withSuccessHandler(url=>{
-    if(url){
-      document.getElementById('sourceImage').src=url;
-      document.getElementById('uploadFile').style.display='none';
-      document.getElementById('formMsg').textContent="تم العثور على صورة المنتج";
-    } else {
-      document.getElementById('sourceImage').src="";
-      document.getElementById('uploadFile').style.display='block';
-      document.getElementById('formMsg').textContent="لم يتم العثور على صورة، الرجاء رفع صورة جديدة";
-    }
-  }).findSourceImageUrl(barcode);
-}
-
-function saveProduct(){
-  if(!currentUser){alert("يجب تسجيل الدخول");return;}
-  const btn=document.querySelector("button[onclick='saveProduct()']");
-  btn.disabled=true;
-  btn.innerHTML='<span class="loader"></span> جاري الحفظ...';
-
-  const barcode=document.getElementById('barcodeInput').value.trim();
-  if(!barcode){alert("ادخل الباركود");btn.disabled=false;btn.textContent="حفظ المنتج";return;}
-  const fileInput=document.getElementById('uploadFile');
-  const willUpload=fileInput.files&&fileInput.files.length>0;
-
-  const record={
-    section:currentUser.section||'',
-    employeeName:currentUser.employeeName||currentUser.username,
-    barcode,
-    productName:document.getElementById('productName').value,
-    spec1:document.getElementById('spec1').value,
-    spec2:document.getElementById('spec2').value,
-    company:document.getElementById('company').value,
-    price:document.getElementById('price').value,
-    stock:document.getElementById('stock').value,
-    sourceImageUrl:document.getElementById('sourceImage').src||'',
-    uploadedImageUrl:''
-  };
-
-  if(willUpload){
-    const file=fileInput.files[0];
-    const reader=new FileReader();
-    reader.onload=function(evt){
-      const base64=evt.target.result.split(',')[1];
-      google.script.run.withSuccessHandler(uploadedUrl=>{
-        record.uploadedImageUrl=uploadedUrl||'';
-        google.script.run.withSuccessHandler(res=>{
-          btn.disabled=false;
-          btn.textContent="حفظ المنتج";
-          if(res.success){
-            document.getElementById('formMsg').textContent="✅ تم الحفظ بنجاح.";
-            ['barcodeInput','productName','spec1','spec2','company','price','stock'].forEach(id=>document.getElementById(id).value='');
-            document.getElementById('sourceImage').src='';
-            fileInput.value='';
-          } else document.getElementById('formMsg').textContent="❌ فشل الحفظ.";
-        }).saveProductRecord(record);
-      }).uploadImageBase64(base64,file.type,barcode);
-    };
-    reader.readAsDataURL(file);
-  } else {
-    google.script.run.withSuccessHandler(res=>{
-      btn.disabled=false;
-      btn.textContent="حفظ المنتج";
-      if(res.success){
-        document.getElementById('formMsg').textContent="✅ تم الحفظ بنجاح.";
-        ['barcodeInput','productName','spec1','spec2','company','price','stock'].forEach(id=>document.getElementById(id).value='');
-        document.getElementById('sourceImage').src='';
-      } else document.getElementById('formMsg').textContent="❌ فشل الحفظ.";
-    }).saveProductRecord(record);
+codeReader.decodeFromVideoDevice(null, 'preview', (result, err) => {
+  if (result) {
+    window.opener.postMessage({ barcode: result.text }, '*');
+    window.close();
   }
-}
-
-document.addEventListener('keydown',e=>{
-  if(e.key==='Enter'){ if(!currentUser) doLogin(); else checkBarcode(); }
 });
+
+navigator.mediaDevices.getUserMedia(constraints)
+  .then(stream => preview.srcObject = stream)
+  .catch(() => alert("تعذر الوصول للكاميرا. تأكد من السماح للتطبيق بالوصول."));
+
+closeBtn.onclick = () => window.close();
 </script>
 </body>
 </html>
