@@ -2,95 +2,113 @@
 <html lang="ar">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>ماسح الباركود</title>
 <style>
-  body {
-    margin: 0;
-    background: #000;
-    overflow: hidden;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-  }
-
-  #container {
-    position: relative;
-    width: 300px;
-    height: 300px;
-    overflow: hidden;
-    border: 3px solid #00ff55;
-    border-radius: 20px;
-  }
-
-  video {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 300px;
-    height: 300px;
-    object-fit: cover;
-    border-radius: 20px;
-  }
-
-  #laser {
-    position: absolute;
-    width: 100%;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, #00ff55, transparent);
-    animation: scan 2s linear infinite;
-  }
-
-  @keyframes scan {
-    0% { top: 0; }
-    50% { top: calc(100% - 2px); }
-    100% { top: 0; }
-  }
-
-  #output {
-    position: absolute;
-    bottom: -40px;
-    width: 100%;
-    color: #fff;
-    text-align: center;
-    font-size: 18px;
-    font-family: sans-serif;
-  }
+body {
+  margin: 0;
+  background: #000;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+}
+#video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+#overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.frame {
+  position: relative;
+  width: 260px;
+  height: 260px;
+  border: 3px solid rgba(0, 255, 0, 0.6);
+  border-radius: 12px;
+  box-shadow: 0 0 25px rgba(0,255,0,0.4);
+  overflow: hidden;
+}
+.laser {
+  position: absolute;
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 0, 0, 0.8);
+  box-shadow: 0 0 15px red;
+  animation: scan 2s linear infinite;
+}
+@keyframes scan {
+  0% { top: 0; }
+  100% { top: calc(100% - 3px); }
+}
+.message {
+  position: absolute;
+  bottom: 15px;
+  color: #fff;
+  font-size: 16px;
+  background: rgba(0,0,0,0.5);
+  padding: 6px 12px;
+  border-radius: 8px;
+}
 </style>
 </head>
 <body>
-  <div id="container">
-    <video id="video" autoplay></video>
-    <div id="laser"></div>
-    <div id="output"></div>
+
+<video id="video" autoplay playsinline></video>
+<div id="overlay">
+  <div class="frame">
+    <div class="laser"></div>
   </div>
+</div>
+<div id="msg" class="message">جاري تشغيل الكاميرا...</div>
 
-  <script src="https://unpkg.com/@zxing/library@latest"></script>
-  <script>
-    const codeReader = new ZXing.BrowserMultiFormatReader();
-    const videoElement = document.getElementById('video');
-    const outputDiv = document.getElementById('output');
+<script type="module">
+import QrScanner from "https://cdn.jsdelivr.net/npm/qr-scanner@1.4.2/qr-scanner.min.js";
 
-    async function startScanner() {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const camera = devices.find(d => d.kind === 'videoinput');
-        if (!camera) throw new Error('لا توجد كاميرا متاحة');
+const video = document.getElementById('video');
+const msg = document.getElementById('msg');
 
-        await codeReader.decodeFromVideoDevice(camera.deviceId, videoElement, (result, err) => {
-          if (result) {
-            outputDiv.textContent = result.text;
-            window.parent.postMessage(result.text, '*'); // إرسال الكود للتطبيق
-          }
-        });
-      } catch (error) {
-        console.log('تم تجاهل خطأ الكاميرا:', error);
-        // لا تعرض أي رسالة للمستخدم
-      }
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" }, // ✅ الكاميرا الخلفية
+        width: { ideal: 1920 },               // ✅ دقة HD
+        height: { ideal: 1080 }
+      },
+      audio: false
+    });
+    video.srcObject = stream;
+    msg.textContent = "وجّه الكود داخل الإطار لمسحه...";
+    startScanner(video);
+  } catch (err) {
+    console.error(err);
+    msg.textContent = "تعذر الوصول للكاميرا، تحقق من الأذونات.";
+  }
+}
+
+function startScanner(videoElem) {
+  const scanner = new QrScanner(videoElem, result => {
+    if (result?.data) {
+      window.opener?.postMessage({ barcode: result.data }, "*");
+      msg.textContent = "تم المسح بنجاح ✓";
+      setTimeout(() => window.close(), 600);
     }
+  }, {
+    returnDetailedScanResult: true,
+    highlightScanRegion: false,
+    highlightCodeOutline: true,
+  });
+  scanner.start();
+}
 
-    startScanner();
-  </script>
+startCamera();
+</script>
 </body>
 </html>
