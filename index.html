@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ماسح الباركود</title>
+
 <style>
 body {
   margin: 0;
@@ -67,20 +68,24 @@ button {
 }
 </style>
 </head>
+
 <body>
+
 <video id="preview" autoplay playsinline></video>
+
 <div id="overlay">
   <div class="frame">
     <div class="laser"></div>
   </div>
 </div>
+
 <button id="closeBtn">إغلاق</button>
 
 <script src="https://unpkg.com/@zxing/library@latest"></script>
+
 <script>
+const video = document.getElementById("preview");
 const codeReader = new ZXing.BrowserMultiFormatReader();
-const preview = document.getElementById('preview');
-const closeBtn = document.getElementById('closeBtn');
 
 const constraints = {
   video: {
@@ -90,22 +95,73 @@ const constraints = {
   }
 };
 
-navigator.mediaDevices.getUserMedia(constraints)
-  .then(stream => {
-    preview.srcObject = stream;
-    codeReader.decodeFromVideoDevice(null, 'preview', (result, err) => {
-      if (result) {
-        window.opener?.postMessage({ barcode: result.text }, '*');
-        window.close();
-      }
-    });
-  })
-  .catch(() => {
-    // ⚠️ تمت إزالة رسالة التنبيه — لا يظهر أي Alert الآن
-    console.log("لا يمكن الوصول للكاميرا (لكن المتصفح قد يفتحها تلقائيًا).");
+navigator.mediaDevices.getUserMedia(constraints).then(stream => {
+  video.srcObject = stream;
+  enhancedScan();
+}).catch(err => console.log(err));
+
+function sendResult(code) {
+  window.opener?.postMessage({ barcode: code }, '*');
+  window.close();
+}
+
+/* ============================
+   ماسح محسن (ZXing + تحسين صورة)
+   ============================ */
+function enhancedScan() {
+  codeReader.decodeFromVideoDevice(null, "preview", (result, err) => {
+    if (result) {
+      sendResult(result.text);
+      return;
+    }
   });
+
+  // نبدأ عملية تحسين الصورة كل 400ms
+  setInterval(() => {
+    tryEnhancedFrame();
+  }, 400);
+}
+
+/* ============================
+   التقاط صورة وتحسينها وقراءتها
+   ============================ */
+function tryEnhancedFrame() {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  let data = imageData.data;
+
+  // زيادة التباين وتحويل الأبيض/الأسود (Threshold)
+  for (let i = 0; i < data.length; i += 4) {
+    let v = (data[i] + data[i+1] + data[i+2]) / 3;
+    let bw = v < 130 ? 0 : 255;
+    data[i] = data[i+1] = data[i+2] = bw;
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  // محاولة قراءة الكود بعد التحسين
+  const luminanceSource = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+  const bitmap = new ZXing.BinaryBitmap(new ZXing.GlobalHistogramBinarizer(luminanceSource));
+
+  try {
+    const result = codeReader.decodeBitmap(bitmap);
+    if (result && result.text) {
+      sendResult(result.text);
+    }
+  } catch (e) {
+    // تجاهل – المحاولة القادمة ستعمل
+  }
+}
 
 closeBtn.onclick = () => window.close();
 </script>
+
 </body>
 </html>
